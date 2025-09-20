@@ -104,15 +104,51 @@ interface FrameCacheOptions {
 
 **Purpose**: Intelligently pre-renders frames around current time for smooth playback.
 
-**Logic Flow**:
+**Logic Flow with Examples**:
 
-1. Identify uncached frames within specified range
-2. Expand to full 1-second buckets to avoid fragmented cache regions
-3. Sort frames by proximity to current time (forward-first priority)
-4. Cap total scheduled renders to prevent performance issues
-5. Use `requestIdleCallback` for non-blocking pre-rendering
-6. Execute render function for each uncached frame
-7. Cache newly rendered frames
+**Example Setup**: `currentTime = 5.2s`, `range = 3s`, `cacheResolution = 30fps`
+
+1. **Identify uncached frames within specified range**
+
+   - Check frames from `2.2s` to `8.2s` (5.2s ± 3s)
+   - At 30fps, this checks 180 frames: `[2.2, 2.23, 2.27, ..., 8.17, 8.2]`
+   - Example: Only frames at `[2.5, 3.1, 4.8, 6.2, 7.9]` are uncached
+
+2. **Expand to full 1-second buckets to avoid fragmented cache regions**
+
+   - Group uncached frames by second: `{2: [2.5], 3: [3.1], 4: [4.8], 6: [6.2], 7: [7.9]}`
+   - Expand each second to all 30 frames:
+     - Second 2: `[2.0, 2.03, 2.07, ..., 2.97]` (30 frames)
+     - Second 3: `[3.0, 3.03, 3.07, ..., 3.97]` (30 frames)
+     - etc.
+   - Result: 150 frames to potentially pre-render (5 seconds × 30fps)
+
+3. **Sort frames by proximity to current time (forward-first priority)**
+
+   - Calculate distance from `5.2s`: `|frameTime - 5.2|`
+   - Forward frames get priority: `5.2, 5.23, 5.27, 5.3, 5.33, ...`
+   - Then backward frames: `5.17, 5.13, 5.1, 5.07, ...`
+   - Final order: `[5.2, 5.23, 5.27, 5.3, ..., 5.17, 5.13, 5.1, ...]`
+
+4. **Cap total scheduled renders to prevent performance issues**
+
+   - Default cap: `max(30, min(90, 30fps × 3s)) = 90` frames
+   - Take first 90 frames from sorted list
+   - This covers ~3 seconds of content around current time
+
+5. **Use `requestIdleCallback` for non-blocking pre-rendering**
+
+   - Each frame renders during browser idle time
+   - Prevents blocking main thread during playback
+
+6. **Execute render function for each uncached frame**
+
+   - Call `renderFunction(time)` for each of the 90 scheduled frames
+   - Each render produces an `ImageData` object
+
+7. **Cache newly rendered frames**
+   - Store each rendered frame with timeline hash and timestamp
+   - Future frame requests at these times will be instant
 
 ## Integration Example: Preview Panel
 
@@ -233,6 +269,32 @@ await preRenderNearbyFrames(
   3
 );
 ```
+
+**Pre-rendering Example**:
+
+- Current time: `5.2s`
+- Range: `3s` (pre-render 3 seconds before and after)
+- Cache resolution: `30fps`
+
+```
+Timeline: 2.0s ────────── 5.2s ────────── 8.0s
+          │              │              │
+          │              │              │
+    [2.0-2.97]     [5.0-5.97]     [7.0-7.97]
+    (30 frames)    (30 frames)    (30 frames)
+          │              │              │
+          ▼              ▼              ▼
+    Pre-render      Current      Pre-render
+    backward        position     forward
+```
+
+- **Step 1**: Check 180 frames from `2.2s` to `8.2s`
+- **Step 2**: Find 5 uncached frames: `[2.5, 3.1, 4.8, 6.2, 7.9]`
+- **Step 3**: Expand to full seconds: `[2.0-2.97, 3.0-3.97, 4.0-4.97, 6.0-6.97, 7.0-7.97]`
+- **Step 4**: Sort by proximity: `[5.2, 5.23, 5.27, ..., 5.17, 5.13, ...]`
+- **Step 5**: Take first 90 frames (covers ~3 seconds)
+- **Step 6**: Render each frame during idle time
+- **Result**: Smooth scrubbing around `5.2s` with 90 pre-cached frames
 
 ### Cache Management
 
