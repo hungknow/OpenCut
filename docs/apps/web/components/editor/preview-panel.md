@@ -32,6 +32,25 @@ PreviewPanel
 - Supports both normal and fullscreen modes
 - Uses ResizeObserver for dynamic resizing
 
+#### Available Space Calculation
+
+The component calculates available space by subtracting UI elements and spacing from container dimensions.
+
+**Example Calculations**:
+
+_Fullscreen Mode_ (1920×1080 window):
+
+- Window: 1920×1080
+- Reserved: 80px toolbar + 24px margins = 104px
+- Available: 1920×976 (width: 1920-24, height: 1080-80-24)
+
+_Normal Mode_ (800×600 container):
+
+- Container: 800×600
+- Padding: 16px all sides = 32px total
+- Toolbar: 40px + 16px gap = 56px
+- Available: 768×512 (width: 800-32, height: 600-32-56)
+
 **Related React Code**:
 
 ```typescript
@@ -49,27 +68,55 @@ useEffect(() => {
     let availableWidth, availableHeight;
 
     if (isExpanded) {
-      // Fullscreen mode: use window dimensions
-      const controlsHeight = 80;
-      const marginSpace = 24;
+      // Fullscreen mode: use entire browser window minus reserved space
+      const controlsHeight = 80; // Height reserved for fullscreen toolbar
+      const marginSpace = 24; // Margin around preview (12px on each side)
       availableWidth = window.innerWidth - marginSpace;
       availableHeight = window.innerHeight - controlsHeight - marginSpace;
     } else {
-      // Normal mode: use container dimensions
+      // Normal mode: use container dimensions minus all UI elements
       const container = containerRef.current.getBoundingClientRect();
-      // ... calculate available space considering padding, gaps, toolbar
+      const computedStyle = getComputedStyle(containerRef.current);
+
+      // Extract all CSS padding values from the container
+      const paddingTop = parseFloat(computedStyle.paddingTop);
+      const paddingBottom = parseFloat(computedStyle.paddingBottom);
+      const paddingLeft = parseFloat(computedStyle.paddingLeft);
+      const paddingRight = parseFloat(computedStyle.paddingRight);
+
+      // Extract gap between elements (defaults to 16px if not set)
+      const gap = parseFloat(computedStyle.gap) || 16;
+
+      // Find and measure the toolbar height dynamically
+      const toolbar = containerRef.current.querySelector("[data-toolbar]");
+      const toolbarHeight = toolbar
+        ? toolbar.getBoundingClientRect().height
+        : 0;
+
+      // Calculate available space by subtracting all reserved space
+      availableWidth = container.width - paddingLeft - paddingRight;
+      availableHeight =
+        container.height -
+        paddingTop -
+        paddingBottom -
+        toolbarHeight -
+        (toolbarHeight > 0 ? gap : 0); // Only subtract gap if toolbar exists
     }
 
-    // Maintain aspect ratio
-    const targetRatio = canvasSize.width / canvasSize.height;
-    const containerRatio = availableWidth / availableHeight;
+    // Maintain canvas aspect ratio while fitting available space
+    const targetRatio = canvasSize.width / canvasSize.height; // e.g., 16:9 = 1.78
+    const containerRatio = availableWidth / availableHeight; // e.g., 1920:976 = 1.97
 
     if (containerRatio > targetRatio) {
-      height = availableHeight * (isExpanded ? 0.95 : 1);
-      width = height * targetRatio;
+      // Container is wider than needed - fit to height and calculate width
+      // Example: 1920×976 available, 16:9 canvas → fit to 976px height
+      height = availableHeight * (isExpanded ? 0.95 : 1); // 976 × 0.95 = 927px
+      width = height * targetRatio; // 927 × 1.78 = 1650px
     } else {
-      width = availableWidth * (isExpanded ? 0.95 : 1);
-      height = width / targetRatio;
+      // Container is taller than needed - fit to width and calculate height
+      // Example: 768×512 available, 16:9 canvas → fit to 768px width
+      width = availableWidth * (isExpanded ? 0.95 : 1); // 768 × 1 = 768px
+      height = width / targetRatio; // 768 ÷ 1.78 = 431px
     }
 
     setPreviewDimensions({ width, height });
@@ -88,6 +135,20 @@ useEffect(() => {
 - Implements FPS throttling during playback
 - Uses offscreen canvas for non-blocking rendering
 - Pre-renders nearby frames for smooth scrubbing
+
+**Performance Examples**:
+
+_FPS Throttling_ (30fps project):
+
+- Min frame interval: 1/30 = 33.33ms
+- If last frame was 16ms ago → skip rendering
+- If last frame was 40ms ago → render new frame
+
+_Canvas Resolution_ (1920×1080 display):
+
+- Display size: 1920×1080
+- Canvas internal: 1920×1080 (1:1 scaling)
+- Memory usage: 1920×1080×4 = 8.3MB per frame
 
 **Related React Code**:
 
@@ -159,6 +220,22 @@ useEffect(() => {
 - Manages audio gain for volume/mute control
 - Synchronizes audio with timeline playback
 - Supports multiple concurrent audio sources
+
+**Audio Timing Examples**:
+
+_Element Timing_ (10s audio element):
+
+- Element starts at: 5.0s
+- Current time: 7.0s
+- Trim start: 1.0s
+- Local time: 7.0 - 5.0 + 1.0 = 3.0s (3 seconds into trimmed audio)
+
+_Volume Control_:
+
+- Volume: 0.8 (80%)
+- Muted: false
+- Final gain: 0.8 × 1.0 = 0.8
+- Muted: true → Final gain: 0.8 × 0.0 = 0.0
 
 **Related React Code**:
 
@@ -311,6 +388,24 @@ useEffect(() => {
 - Calculates scaled coordinates for canvas positioning
 - Constrains dragging within canvas boundaries
 - Updates element position on drag completion
+
+**Coordinate Scaling Examples**:
+
+_Mouse to Canvas Conversion_:
+
+- Preview size: 800×600
+- Canvas size: 1920×1080
+- Scale ratio: 800/1920 = 0.417
+- Mouse delta: +100px
+- Canvas delta: 100/0.417 = 240px
+
+_Boundary Constraints_ (1920×1080 canvas):
+
+- Element size: 200×100
+- Max X: 1920/2 - 200/2 = 860px
+- Min X: -1920/2 + 200/2 = -860px
+- Max Y: 1080/2 - 100/2 = 490px
+- Min Y: -1080/2 + 100/2 = -490px
 
 **Related React Code**:
 
