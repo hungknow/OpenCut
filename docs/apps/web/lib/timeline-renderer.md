@@ -78,7 +78,7 @@ The primary rendering function that orchestrates the entire frame composition pr
    - Skips hidden elements
    - Calculates element visibility considering trim settings
 
-5. **Element Rendering**
+5. <a id="element-rendering-logic">**Element Rendering**</a>
    - Renders elements in reverse track order (topmost last)
    - Handles different element types (media, text)
    - Applies proper scaling and positioning
@@ -138,6 +138,8 @@ if (backgroundType === "blur") {
 
 ## Element Rendering
 
+This is the details in the [step](#element-rendering-logic)
+
 ### Media Element Rendering
 
 #### Video Elements
@@ -156,6 +158,8 @@ if (mediaItem.type === "video") {
     const containScale = Math.min(canvasWidth / mediaW, canvasHeight / mediaH);
     const drawW = mediaW * containScale;
     const drawH = mediaH * containScale;
+
+    // Media is centered on canvas
     const drawX = (canvasWidth - drawW) / 2;
     const drawY = (canvasHeight - drawH) / 2;
 
@@ -264,29 +268,31 @@ async function getImageElement(
 
 ### Video Frame Caching
 
-- Uses `videoCache.getFrameAt()` for efficient video frame extraction
-- Caches video frames to avoid repeated decoding
-- Handles video timing and trimming
+The video cache system provides efficient video frame extraction and caching:
 
-## Scaling and Positioning
+- **`videoCache.getFrameAt()`**: Main method for retrieving video frames at specific timestamps
+- **Frame validation**: Uses `timestamp` and `duration` to determine if cached frames are still valid
+- **Canvas pooling**: Reuses canvas elements to minimize memory allocations
+- **Async iteration**: Supports both seeking and sequential frame iteration
+- **Error handling**: Gracefully handles decoding failures and codec issues
 
-### Canvas Scaling
-
-The renderer supports two scaling modes:
-
-1. **Display Scaling**: Canvas dimensions for display
-2. **Project Scaling**: Original project dimensions
+**Cache Structure:**
 
 ```typescript
-const scaleX = projectCanvasSize ? canvasWidth / projectCanvasSize.width : 1;
-const scaleY = projectCanvasSize ? canvasHeight / projectCanvasSize.height : 1;
+interface VideoSinkData {
+  sink: CanvasSink; // MediaBunny canvas sink for decoding
+  iterator: AsyncGenerator<WrappedCanvas> | null; // Frame iterator for sequential access
+  currentFrame: WrappedCanvas | null; // Currently cached frame
+  lastTime: number; // Timestamp of last accessed frame
+}
 ```
 
-### Element Positioning
+**Frame Retrieval Process:**
 
-- **Media elements**: Centered with contain scaling
-- **Text elements**: Positioned relative to canvas center with project scaling
-- **Background elements**: Cover entire canvas
+1. **Cache Check**: First checks if current cached frame is valid for the requested time
+2. **Sequential Search**: If seeking forward, iterates through frames efficiently
+3. **Seek Operation**: For large time jumps, seeks directly to the target timestamp
+4. **Canvas Pooling**: Reuses canvas elements from a pool to avoid memory allocation overhead
 
 ## Error Handling
 
@@ -348,31 +354,9 @@ await renderTimelineFrame({
 - **Element layering**: Later elements appear on top
 - **Background first**: Background rendered before elements
 
-### Memory Management
-
-- **Image caching**: Prevents repeated image loading
-- **Video frame caching**: Efficient video frame extraction
-- **Canvas reuse**: Reuses canvas contexts when possible
-
 ### Scaling Optimization
 
 - **Project scaling**: Maintains aspect ratios
 - **Display scaling**: Adapts to different canvas sizes
 - **Font scaling**: Text scales proportionally
-
-## Future Enhancements
-
-### Potential Improvements
-
-- **WebGL rendering**: Hardware-accelerated rendering
-- **Layer compositing**: More sophisticated blending modes
-- **Effect rendering**: Filters, transitions, and effects
-- **Animation support**: Keyframe-based animations
-- **Performance monitoring**: Render time tracking and optimization
-
-### Extensibility
-
-- **Custom element types**: Plugin system for new element types
-- **Effect system**: Modular effect rendering
-- **Export formats**: Multiple output format support
-- **Quality settings**: Configurable rendering quality levels
+  s
